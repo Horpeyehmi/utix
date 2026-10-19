@@ -5,9 +5,17 @@
  * redemptions, fraud locking, and burning that automatically uphold all domain invariants.
  */
 
-import { err, ok, type Result } from '@/core/result/result';
-import { DomainInvariantChecker } from './checker.ts';
-import type { DomainState, Event, InvariantViolation, Ticket, TransferRecord } from './types.ts';
+import { ok } from '@/core/result/result';
+import { defaultOwnershipStore } from '@/core/ownership/ownership';
+import { assessTransferRisk } from '@/core/transfer-risk/policy';
+import { recordTransferAttempt } from '@/core/transfer-risk/records';
+import type { TransferRiskContext } from '@/core/transfer-risk/types';
+
+// Invariant failures carry a structured violation rather than a feature's string error code.
+type Result<T, E> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly code: E };
+function err<E>(code: E): { readonly ok: false; readonly code: E } { return { ok: false, code }; }
+import { DomainInvariantChecker } from './checker';
+import type { DomainState, InvariantViolation, Ticket, TransferRecord } from './types';
 
 export interface IssueTicketParams {
   readonly id: string;
@@ -143,10 +151,15 @@ export function issueTicket(
 /**
  * Transfers ticket ownership while verifying value conservation and replay protection.
  */
-export function transferTicket(
+export function validateTicketTransfer(
   state: DomainState,
   params: TransferTicketParams
-): Result<DomainState, InvariantViolation> {
+): Result<Ticket, InvariantViolation> {
+  if (!params.id.trim() || params.id.length > 128 || !params.nonce.trim() || params.nonce.length > 128 || !params.fromAddress.trim() || !params.toAddress.trim() || params.fromAddress === params.toAddress ||
+      [params.priceStroops, params.organizerFeeStroops, params.protocolFeeStroops, params.sellerProceedsStroops].some((amount) => !Number.isSafeInteger(amount) || amount < 0)) {
+    return err({ invariantId: 'INV-07', name: 'Stroop Precision & Positive Bounds', severity: 'critical',
+      entityId: params.id, entityType: 'transfer', message: 'Use a unique transfer ID and nonce, a different recipient, and non-negative safe integer fee amounts.' });
+  }
   const ticket = state.tickets.get(params.ticketId);
   if (!ticket) {
     return err({
@@ -215,7 +228,7 @@ export function transferTicket(
   }
 
   // Verify nonce replay (INV-09)
-  if (state.processedNonces.has(params.nonce)) {
+  if (state.processedNonces.has(params.nonce) || state.transfers.some((transfer) => transfer.id === params.id)) {
     return err({
       invariantId: 'INV-09',
       name: 'Nonce & Idempotency Replay Protection',
@@ -225,6 +238,27 @@ export function transferTicket(
       message: `Replay detected: transfer nonce '${params.nonce}' has already been processed`
     });
   }
+
+  return ok(ticket);
+}
+
+export function transferTicket(
+  state: DomainState,
+  params: TransferTicketParams,
+  riskContext: TransferRiskContext = {}
+): Result<DomainState, InvariantViolation> {
+  const validation = validateTicketTransfer(state, params);
+  if (!validation.ok) return validation;
+  const ticket = validation.value;
+  const context = { ...riskContext, now: riskContext.now ?? Date.now() };
+  const assessment = assessTransferRisk(state, params, context);
+  if (assessment.disposition !== 'allow') return err({
+    invariantId: 'INV-05', name: 'Transfer risk review', severity: 'high',
+    entityId: params.id, entityType: 'transfer', code: assessment.code,
+    message: assessment.disposition === 'review'
+      ? 'This transfer needs organizer review before it can continue.'
+      : 'This transfer cannot continue. Contact the organizer for help.'
+  });
 
   // Apply transfer atomically
   const updatedTicket: Ticket = {
@@ -244,7 +278,7 @@ export function transferTicket(
     protocolFeeStroops: params.protocolFeeStroops,
     sellerProceedsStroops: params.sellerProceedsStroops,
     nonce: params.nonce,
-    timestamp: params.timestamp ?? Date.now()
+    timestamp: context.now
   };
 
   const updatedTickets = new Map(state.tickets);
@@ -260,7 +294,7 @@ export function transferTicket(
     processedNonces: updatedNonces
   };
 
-  return ok(nextState);
+  return ok(recordTransferAttempt(nextState, params, ticket.nonce, 'completed', assessment, context));
 }
 
 /**
@@ -355,7 +389,7 @@ export function initiateSafeTicketTransfer(
     readonly correlationId?: string;
     readonly actor: { kind: "user" | "maintainer" | "service" | "contract"; id: string };
   },
-  store: import("@/core/ownership/ownership").OwnershipTransferStore = import("@/core/ownership/ownership").defaultOwnershipStore
+  store: import("@/core/ownership/ownership").OwnershipTransferStore = defaultOwnershipStore
 ): Result<import("@/core/ownership/types").OwnershipTransferProposal, InvariantViolation> {
   const ticket = state.tickets.get(params.ticketId);
   if (!ticket) {
@@ -445,101 +479,29 @@ export function acceptSafeTicketTransfer(
     readonly actor: { kind: "user" | "maintainer" | "service" | "contract"; id: string };
     readonly now?: number | Date;
   },
-  store: import("@/core/ownership/ownership").OwnershipTransferStore = import("@/core/ownership/ownership").defaultOwnershipStore
+  store: import("@/core/ownership/ownership").OwnershipTransferStore = defaultOwnershipStore,
+  riskContext: TransferRiskContext = {}
 ): Result<{ state: DomainState; proposal: import("@/core/ownership/types").OwnershipTransferProposal }, InvariantViolation> {
   const proposal = store.getTransfer(params.transferId, params.now);
-  if (!proposal) {
-    return err({
-      invariantId: "INV-02",
-      name: "Single Active Ownership",
-      severity: "critical",
-      entityId: params.transferId,
-      entityType: "transfer",
-      message: `Ownership transfer proposal '${params.transferId}' not found`
-    });
+  if (!proposal || proposal.resourceType !== 'ticket' || proposal.status !== 'pending' ||
+      (params.actor.kind !== 'maintainer' && params.actor.id.replace(/^account:/, '') !== proposal.proposedOwner.replace(/^account:/, ''))) {
+    return err({ invariantId: 'INV-02', name: 'Single Active Ownership', severity: 'high',
+      entityId: params.transferId, entityType: 'transfer', message: 'The pending transfer is unavailable or this actor cannot accept it.' });
   }
-
-  const acceptResult = store.accept({
-    transferId: params.transferId,
-    actor: params.actor,
-    now: params.now
-  });
-
-  if (!acceptResult.ok) {
-    return err({
-      invariantId: "INV-02",
-      name: "Single Active Ownership",
-      severity: "high",
-      entityId: params.transferId,
-      entityType: "transfer",
-      message: `Ownership transfer acceptance rejected: ${acceptResult.code}`
-    });
-  }
-
-  const accepted = acceptResult.value;
-  const ticket = state.tickets.get(accepted.resourceId);
-  if (!ticket) {
-    return err({
-      invariantId: "INV-02",
-      name: "Single Active Ownership",
-      severity: "critical",
-      entityId: accepted.resourceId,
-      entityType: "ticket",
-      message: `Ticket '${accepted.resourceId}' not found for transfer`
-    });
-  }
-
-  // Check nonce replay
-  if (state.processedNonces.has(params.nonce)) {
-    return err({
-      invariantId: "INV-09",
-      name: "Nonce & Idempotency Replay Protection",
-      severity: "critical",
-      entityId: params.transferRecordId,
-      entityType: "transfer",
-      message: `Replay detected: transfer nonce '${params.nonce}' already processed`
-    });
-  }
-
-  // Apply transfer atomically
-  const updatedTicket: Ticket = {
-    ...ticket,
-    ownerAddress: accepted.proposedOwner,
-    status: "transferred",
-    nonce: ticket.nonce + 1
-  };
-
-  const priceStroops = accepted.priceStroops ?? 0;
-  const organizerFee = params.organizerFeeStroops ?? 0;
-  const protocolFee = params.protocolFeeStroops ?? 0;
-  const sellerProceeds = params.sellerProceedsStroops ?? (priceStroops - organizerFee - protocolFee);
-
-  const transferRecord: TransferRecord = {
-    id: params.transferRecordId,
-    ticketId: ticket.id,
-    fromAddress: accepted.currentOwner,
-    toAddress: accepted.proposedOwner,
-    priceStroops,
-    organizerFeeStroops: organizerFee,
-    protocolFeeStroops: protocolFee,
-    sellerProceedsStroops: sellerProceeds,
-    nonce: params.nonce,
-    timestamp: typeof params.now === "number" ? params.now : Date.now()
-  };
-
-  const updatedTickets = new Map(state.tickets);
-  updatedTickets.set(updatedTicket.id, updatedTicket);
-
-  const updatedNonces = new Set(state.processedNonces);
-  updatedNonces.add(params.nonce);
-
-  const nextState: DomainState = {
-    ...state,
-    tickets: updatedTickets,
-    transfers: [...state.transfers, transferRecord],
-    processedNonces: updatedNonces
-  };
-
-  return ok({ state: nextState, proposal: accepted });
+  const price = proposal.priceStroops ?? 0;
+  const organizerFee = params.organizerFeeStroops ?? 0, protocolFee = params.protocolFeeStroops ?? 0;
+  const now = params.now instanceof Date ? params.now.getTime() : params.now;
+  // Validate ownership, lifecycle, replay, fee conservation and risk before settling the proposal.
+  const transferred = transferTicket(state, {
+    id: params.transferRecordId, ticketId: proposal.resourceId,
+    fromAddress: proposal.currentOwner, toAddress: proposal.proposedOwner,
+    priceStroops: price, organizerFeeStroops: organizerFee, protocolFeeStroops: protocolFee,
+    sellerProceedsStroops: params.sellerProceedsStroops ?? price - organizerFee - protocolFee,
+    nonce: params.nonce
+  }, { ...riskContext, now: riskContext.now ?? now });
+  if (!transferred.ok) return transferred;
+  const accepted = store.accept({ transferId: params.transferId, actor: params.actor, now: params.now });
+  if (!accepted.ok) return err({ invariantId: 'INV-02', name: 'Single Active Ownership', severity: 'high',
+    entityId: params.transferId, entityType: 'transfer', message: 'The transfer proposal could not be accepted.' });
+  return ok({ state: transferred.value, proposal: accepted.value });
 }
-

@@ -13,7 +13,7 @@ import { TestnetFaucetResult } from "@/features/testnet-faucet/components/Testne
 import { TestnetFaucetEmptyState } from "@/features/testnet-faucet/components/TestnetFaucetEmptyState";
 
 export function TestnetFaucetPanel() {
-  const { state, submit } = useTestnetFaucet();
+  const { state, submit, reset } = useTestnetFaucet();
   const { network, epoch } = useNetwork();
 
   const warningRef = useRef<HTMLDivElement>(null);
@@ -44,8 +44,6 @@ export function TestnetFaucetPanel() {
     }
     prevStatusRef.current = state.status;
   }, [state.status]);
-  const { state, submit, reset } = useTestnetFaucet();
-  const { network } = useNetwork();
 
   return (
     <div className="space-y-5">

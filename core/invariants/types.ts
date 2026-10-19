@@ -64,6 +64,8 @@ export interface DomainState {
   readonly transfers: readonly TransferRecord[];
   readonly processedNonces: ReadonlySet<string>;
   readonly blacklistedAddresses: ReadonlySet<string>;
+  /** Persist with the ownership mutation; never expose this internal state in an attendee response. */
+  readonly transferRisk?: import("@/core/transfer-risk/types").TransferRiskState;
 }
 
 export type InvariantId =
@@ -80,6 +82,7 @@ export type InvariantId =
   | 'INV-11'; // Blacklisted Principal Action Quarantine
 
 export interface InvariantViolation {
+  readonly code?: import("@/core/transfer-risk/types").TransferRiskCode;
   readonly invariantId: InvariantId;
   readonly name: string;
   readonly severity: 'critical' | 'high' | 'medium';

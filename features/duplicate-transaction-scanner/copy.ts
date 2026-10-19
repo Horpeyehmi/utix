@@ -19,7 +19,7 @@ export const copy = {
   // Empty state
   emptyHeading: "No scan yet",
   emptyBody:
-    "Enter one or more Stellar transaction hashes above and click "Scan for Duplicates".",
+    'Enter one or more Stellar transaction hashes above and click "Scan for Duplicates".',
 
   // Loading
   loadingLabel: "Scanning transactions…",
