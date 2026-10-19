@@ -120,3 +120,67 @@ telemetry will appear as structured lines.
 Each job emits `worker.run` (success) or `worker.retry` / `worker.exhausted`
 (failure) telemetry with latency, error code and the job's correlation id. See
 [docs/TELEMETRY.md](./TELEMETRY.md) for the dashboard queries.
+
+## Bounded queue backpressure
+
+Expensive operations (analytics, Soroban simulations, index rebuilds, export
+generations) can flood the queue if called in a burst. `core/workers/backpressure.ts`
+adds a **`BoundedEnqueueGate`** that enforces a hard concurrency ceiling per
+operation label, with two overflow policies:
+
+- **`reject`** (default) — returns `backpressure_full` immediately.
+- **`drop_oldest`** — evicts the oldest queued/retrying job in the label group
+  to make room; useful for "latest state wins" operations.
+
+### Gate as a standalone facade
+
+```ts
+import { createBoundedEnqueueGate } from "@/core/workers/backpressure";
+
+const gate = createBoundedEnqueueGate(framework, {
+  label: "analytics",   // meters ops whose name starts with "analytics"
+  maxConcurrent: 4,
+  overflowPolicy: "drop_oldest"
+});
+
+const result = gate.enqueue({ operation: "analytics.aggregate", params });
+if (!result.ok) {
+  await gate.waitForCapacity(); // resolves when a slot opens or ceiling is raised
+}
+```
+
+### Gate wired into `submit()`
+
+Pass gates to `createWorkerFramework` so `submit()` checks capacity before
+spending idempotency/quota:
+
+```ts
+const framework = createWorkerFramework({}, { gates: [gate] });
+const result = framework.submit({ operation: "analytics.aggregate", idempotencyKey: key });
+if (!result.ok && result.code === "backpressure_full") {
+  // quota was NOT spent — safe to retry after waitForCapacity()
+}
+```
+
+`submit()` always uses **reject** semantics regardless of the gate's
+`overflowPolicy`. For `drop_oldest`, use `gate.enqueue()` directly.
+
+### Adjusting capacity at runtime (maintainer only)
+
+```ts
+gate.adjustCapacity({ role: "maintainer" }, 8, "peak_load");
+```
+
+A `viewer` receives `backpressure_unauthorized`. The hard cap `maxCapacityCeiling`
+(default: `maxConcurrent × 10`) cannot be exceeded regardless of role.
+
+### Recovery notes
+
+- **Stuck running job**: force dead-letter via `framework.deadLetter(id)` — the
+  gate heals automatically on the next enqueue check.
+- **Evicted jobs** (drop_oldest): inspect with `framework.inspect("dead_lettered")`
+  and requeue any that are still needed.
+- **Remove the gate**: delete it from `options.gates` and replace `gate.enqueue()`
+  calls with `framework.enqueue()`. No state migration needed.
+
+Full documentation: [docs/BACKPRESSURE.md](./BACKPRESSURE.md)
