@@ -34,7 +34,11 @@ Infrastructure docs: [Telemetry](./docs/TELEMETRY.md) ·
 [Authorization expiry](./docs/AUTHORIZATIONS.md) ·
 [Public status feed](./docs/PUBLIC_STATUS.md) ·
 [Seed data](./docs/SEED_DATA.md) ·
-[API Contract](./docs/API_CONTRACT.md).
+[API Contract](./docs/API_CONTRACT.md) ·
+[Event contract map](./docs/EVENT_CONTRACT_MAP.md) ·
+[Rollout guard & rollback](./docs/ROLLOUT_GUARD_AND_ROLLBACK.md) ·
+[Abuse detection](./docs/ABUSE_DETECTION.md) ·
+[Storage schema migration](./docs/STORAGE_SCHEMA_MIGRATION.md).
 
 ## Tools
 
