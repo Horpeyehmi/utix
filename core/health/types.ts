@@ -30,6 +30,43 @@ export interface StaleRecord {
   details: Record<string, unknown>;
 }
 
+export interface JourneyStepResult {
+  name: string;
+  status: HealthStatus;
+  latencyMs: number;
+  error?: string;
+  dependency?: string;
+}
+
+export interface JourneyRun {
+  id: string;
+  journey: string;
+  startedAt: Date;
+  finishedAt: Date;
+  status: HealthStatus;
+  totalLatencyMs: number;
+  steps: JourneyStepResult[];
+  failedStep?: string;
+  blamedDependency?: string;
+}
+
+export interface JourneyMonitorSummary {
+  timestamp: Date;
+  journey: string;
+  status: HealthStatus;
+  lastRun?: JourneyRun;
+  recentRuns: JourneyRun[];
+  metrics: {
+    runCount: number;
+    successCount: number;
+    failureCount: number;
+    successRate: number;
+    p50LatencyMs: number;
+    p95LatencyMs: number;
+    maxLatencyMs: number;
+  };
+}
+
 export interface HealthSummary {
   timestamp: Date;
   overallStatus: HealthStatus;

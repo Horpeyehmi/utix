@@ -19,6 +19,11 @@ jobs:
       fail-fast: false
       matrix:
         network: [testnet, mainnet]
+        include:
+          - network: testnet
+            horizon: https://horizon-testnet.stellar.org
+          - network: mainnet
+            horizon: https://horizon.stellar.org
 
     steps:
       - name: Checkout
@@ -33,4 +38,5 @@ jobs:
       - name: Run synthetic monitor
         env:
           UTIX_USER_ROLE: service
+          HORIZON_URL: ${{ matrix.horizon }}
         run: npm run synthetic:monitor -- --network ${{ matrix.network }}

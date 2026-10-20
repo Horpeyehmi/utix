@@ -7,6 +7,45 @@
 
 import { HealthIndicator, HealthStatus, HealthSummary, UnresolvedException, StaleRecord } from './types';
 
+export interface JourneyStepResult {
+  name: string;
+  status: 'passed' | 'failed' | 'skipped';
+  latencyMs: number;
+  message?: string;
+  dependency?: string;
+}
+
+export interface JourneyMonitorResult {
+  journey: string;
+  status: 'passed' | 'failed';
+  startedAt: Date;
+  finishedAt: Date;
+  totalLatencyMs: number;
+  steps: JourneyStepResult[];
+  failures: JourneyStepResult[];
+  dependencyBlame: string[];
+}
+
+export interface JourneyMonitorOptions {
+  horizonUrl?: string;
+  timeoutMs?: number;
+  fetchImpl?: typeof fetch;
+}
+
+const DEFAULT_JOURNEY_TIMEOUT_MS = 10_000;
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 class HealthMonitor {
   private indicators: HealthIndicator[] = [];
   private exceptions: UnresolvedException[] = [];
@@ -183,9 +222,125 @@ class HealthMonitor {
   getStaleRecords(maxAgeMs: number): StaleRecord[] {
     return this.staleRecords.filter(r => r.age > maxAgeMs);
   }
+
+  /**
+   * Runs the synthetic end-to-end journey monitor for the most valuable
+   * contributor workflow: registry load -> network reachability -> ledger
+   * fetch. Reports per-step latency, failures, and dependency blame.
+   */
+  async runJourneyMonitor(options: JourneyMonitorOptions = {}): Promise<JourneyMonitorResult> {
+    const startedAt = new Date();
+    const steps: JourneyStepResult[] = [];
+    const timeoutMs = options.timeoutMs ?? DEFAULT_JOURNEY_TIMEOUT_MS;
+    const fetchImpl = options.fetchImpl ?? (typeof fetch !== 'undefined' ? fetch : undefined);
+
+    const runStep = async (
+      name: string,
+      dependency: string,
+      fn: () => Promise<string | void>,
+    ): Promise<void> => {
+      const stepStart = Date.now();
+      try {
+        const message = await withTimeout(Promise.resolve().then(fn), timeoutMs, name);
+        steps.push({
+          name,
+          status: 'passed',
+          latencyMs: Date.now() - stepStart,
+          message: typeof message === 'string' ? message : undefined,
+          dependency,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        steps.push({
+          name,
+          status: 'failed',
+          latencyMs: Date.now() - stepStart,
+          message,
+          dependency,
+        });
+        this.recordException({
+          type: 'JourneyMonitorFailure',
+          message: `Journey step "${name}" failed: ${message}`,
+          error,
+          context: { dependency },
+        });
+      }
+    };
+
+    await runStep('Load feature registry', 'registry', async () => {
+      const { registry } = await import('../registry/registry');
+      const count = Object.keys(registry).length;
+      if (count === 0) throw new Error('Feature registry is empty');
+      return `${count} features loaded`;
+    });
+
+    const horizonUrl = options.horizonUrl ?? process.env.NEXT_PUBLIC_HORIZON_TESTNET_URL;
+
+    await runStep('Resolve Horizon endpoint', 'configuration', async () => {
+      if (!horizonUrl) throw new Error('Horizon endpoint not configured');
+      new URL(horizonUrl);
+      return horizonUrl;
+    });
+
+    await runStep('Fetch latest ledger', 'horizon', async () => {
+      if (!horizonUrl) throw new Error('Horizon endpoint not configured');
+      if (!fetchImpl) throw new Error('fetch is not available in this runtime');
+      const url = `${horizonUrl.replace(/\/$/, '')}/ledgers?order=desc&limit=1`;
+      const response = await fetchImpl(url, { headers: { Accept: 'application/json' } });
+      if (!response.ok) {
+        throw new Error(`Horizon responded with HTTP ${response.status}`);
+      }
+      const body = (await response.json()) as { _embedded?: { records?: unknown[] } };
+      const records = body?._embedded?.records;
+      if (!Array.isArray(records) || records.length === 0) {
+        throw new Error('Horizon returned no ledger records');
+      }
+      return 'Latest ledger retrieved';
+    });
+
+    const finishedAt = new Date();
+    const failures = steps.filter(s => s.status === 'failed');
+    const dependencyBlame = Array.from(
+      new Set(failures.map(f => f.dependency).filter((d): d is string => Boolean(d))),
+    );
+
+    return {
+      journey: 'contributor-happy-path',
+      status: failures.length === 0 ? 'passed' : 'failed',
+      startedAt,
+      finishedAt,
+      totalLatencyMs: finishedAt.getTime() - startedAt.getTime(),
+      steps,
+      failures,
+      dependencyBlame,
+    };
+  }
 }
 
 export const healthMonitor = new HealthMonitor();
+
+export function formatJourneyReport(result: JourneyMonitorResult): string {
+  const lines: string[] = [];
+  lines.push('='.repeat(70));
+  lines.push(`SYNTHETIC JOURNEY MONITOR: ${result.journey}`);
+  lines.push('='.repeat(70));
+  lines.push(`Status: ${result.status.toUpperCase()}`);
+  lines.push(`Started: ${result.startedAt.toISOString()}`);
+  lines.push(`Finished: ${result.finishedAt.toISOString()}`);
+  lines.push(`Total Latency: ${result.totalLatencyMs}ms`);
+  lines.push('');
+  lines.push('STEPS:');
+  for (const step of result.steps) {
+    const symbol = step.status === 'passed' ? '✓' : step.status === 'failed' ? '✗' : '-';
+    lines.push(`  ${symbol} ${step.name} (${step.latencyMs}ms)${step.message ? `: ${step.message}` : ''}`);
+  }
+  if (result.dependencyBlame.length > 0) {
+    lines.push('');
+    lines.push(`DEPENDENCY BLAME: ${result.dependencyBlame.join(', ')}`);
+  }
+  lines.push('='.repeat(70));
+  return lines.join('\n');
+}
 
 export function formatHealthReport(summary: HealthSummary): string {
   const lines: string[] = [];
