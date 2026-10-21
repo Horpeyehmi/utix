@@ -1,3 +1,4 @@
+
 /**
  * Synthetic monitoring for the critical end-to-end journey (#269)
  *
@@ -91,6 +92,8 @@ export interface SyntheticMonitorOptions {
   readonly latencyBudgetMs?: number;
   /** Ingestion lag above this is `degraded`. */
   readonly maxIngestLagLedgers?: number;
+  /** Injectable clock for deterministic tests of `startedAt`/`durationMs`. */
+  readonly clock?: () => number;
 }
 
 /** Mirrors the operation browser's page size, so page two is exercised exactly as users reach it. */
@@ -151,6 +154,16 @@ function isDescendingPage(page: Record<string, unknown>[], cursor?: string): boo
   return true;
 }
 
+/**
+ * A step that never ran (because an earlier step failed) is recorded as a
+ * skipped failure with `errorCode: "skipped"` so the report shows the whole
+ * journey, not just the prefix that executed. `attempts: 0` distinguishes it
+ * from a real failed attempt.
+ */
+function skippedStep(name: SyntheticStepName): SyntheticStepResult {
+  return { step: name, ok: false, attempts: 0, latencyMs: 0, errorCode: "skipped" };
+}
+
 export async function runSyntheticMonitor(
   auth: AuthContext,
   options: SyntheticMonitorOptions
@@ -181,6 +194,7 @@ export async function runSyntheticMonitor(
   const fetchImpl = options.fetch ?? fetch;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const now = options.now ?? (() => Date.now());
+  const clock = options.clock ?? (() => Date.now());
   const base = `${(options.horizonUrl ?? HORIZON_URLS[options.network]).replace(/\/+$/, "")}/`;
   const steps: SyntheticStepResult[] = [];
   const startedAt = now();
@@ -262,6 +276,7 @@ export async function runSyntheticMonitor(
       const source = page[0].source_account;
       return typeof source === "string" && PUBLIC_KEY.test(source) ? ok(source) : err("malformed_payload");
     }));
+  if (!root) steps.push(skippedStep("operations.discover"));
 
   const operationsPath = accountId ? `accounts/${encodeURIComponent(accountId)}/operations` : "";
   const query = { order: "desc", limit: String(SYNTHETIC_PAGE_SIZE) };
@@ -274,6 +289,7 @@ export async function runSyntheticMonitor(
       if (page.length === 0 || !isDescendingPage(page)) return err("pagination_broken");
       return ok(page);
     }));
+  if (!accountId) steps.push(skippedStep("account.operations"));
 
   if (firstPage && firstPage.length === SYNTHETIC_PAGE_SIZE) {
     const cursor = firstPage[firstPage.length - 1].paging_token as string;
@@ -283,6 +299,7 @@ export async function runSyntheticMonitor(
       return isDescendingPage(page, cursor) ? ok(page) : err("pagination_broken");
     });
   }
+  if (firstPage && firstPage.length < SYNTHETIC_PAGE_SIZE) steps.push(skippedStep("account.operations.older"));
 
   const durationMs = now() - startedAt;
   const failed = steps.find((result) => !result.ok);
@@ -309,7 +326,7 @@ export async function runSyntheticMonitor(
     network: options.network,
     status,
     correlationId,
-    startedAt: new Date(startedAt).toISOString(),
+    startedAt: new Date(clock()).toISOString(),
     durationMs,
     steps,
     ...(ingestLagLedgers === undefined ? {} : { ingestLagLedgers })
