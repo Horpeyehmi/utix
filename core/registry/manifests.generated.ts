@@ -18,6 +18,7 @@ import { manifest as batchAddressValidator } from "@/features/batch-address-vali
 import { manifest as claimableBalances } from "@/features/claimable-balances/manifest";
 import { manifest as claimablePredicateBuilder } from "@/features/claimable-predicate-builder/manifest";
 import { manifest as contractEvents } from "@/features/contract-events/manifest";
+import { manifest as duplicateTransactionScanner } from "@/features/duplicate-transaction-scanner/manifest";
 import { manifest as effectsTimeline } from "@/features/effects-timeline/manifest";
 import { manifest as explorerLinks } from "@/features/explorer-links/manifest";
 import { manifest as federationResolver } from "@/features/federation-resolver/manifest";
@@ -32,8 +33,10 @@ import { manifest as liquidityPoolCalculator } from "@/features/liquidity-pool-c
 import { manifest as liquidityPoolInspector } from "@/features/liquidity-pool-inspector/manifest";
 import { manifest as manageDataCodec } from "@/features/manage-data-codec/manifest";
 import { manifest as memoInspector } from "@/features/memo-inspector/manifest";
+import { manifest as multisigAnalyzer } from "@/features/multisig-analyzer/manifest";
 import { manifest as muxedAccountCodec } from "@/features/muxed-account-codec/manifest";
 import { manifest as networkComparison } from "@/features/network-comparison/manifest";
+import { manifest as offerInspector } from "@/features/offer-inspector/manifest";
 import { manifest as operationBrowser } from "@/features/operation-browser/manifest";
 import { manifest as operationSourceMap } from "@/features/operation-source-map/manifest";
 import { manifest as orderbookViewer } from "@/features/orderbook-viewer/manifest";
@@ -57,6 +60,7 @@ import { manifest as sorobanDecoder } from "@/features/soroban-decoder/manifest"
 import { manifest as sorobanFeeEstimator } from "@/features/soroban-fee-estimator/manifest";
 import { manifest as sorobanSpecViewer } from "@/features/soroban-spec-viewer/manifest";
 import { manifest as sponsoredReserves } from "@/features/sponsored-reserves/manifest";
+import { manifest as sponsorshipPlanner } from "@/features/sponsorship-planner/manifest";
 import { manifest as strkeyInspector } from "@/features/strkey-inspector/manifest";
 import { manifest as testnetFaucet } from "@/features/testnet-faucet/manifest";
 import { manifest as tomlValidator } from "@/features/toml-validator/manifest";
@@ -88,6 +92,7 @@ export const generatedManifests: FeatureManifest[] = [
   claimableBalances,
   claimablePredicateBuilder,
   contractEvents,
+  duplicateTransactionScanner,
   effectsTimeline,
   explorerLinks,
   federationResolver,
@@ -102,8 +107,10 @@ export const generatedManifests: FeatureManifest[] = [
   liquidityPoolInspector,
   manageDataCodec,
   memoInspector,
+  multisigAnalyzer,
   muxedAccountCodec,
   networkComparison,
+  offerInspector,
   operationBrowser,
   operationSourceMap,
   orderbookViewer,
@@ -127,6 +134,7 @@ export const generatedManifests: FeatureManifest[] = [
   sorobanFeeEstimator,
   sorobanSpecViewer,
   sponsoredReserves,
+  sponsorshipPlanner,
   strkeyInspector,
   testnetFaucet,
   tomlValidator,
