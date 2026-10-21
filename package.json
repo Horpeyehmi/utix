@@ -35,6 +35,7 @@
     "verify:seed": "vitest run core/seed",
     "verify:fixtures": "vitest run core/testing/__tests__/fixtures.contract.test.ts --reporter=verbose",
     "verify:readiness": "node scripts/release-readiness-gate.mjs",
+    "verify:migration-readiness": "node scripts/verify-migration-readiness.mjs",
     "check": "npm run lint && npm run test && npm run verify:features && npm run verify:boundaries && npm run verify:issues && npm run verify:telemetry && npm run verify:reconciliation && npm run verify:audit && npm run verify:ledger && npm run verify:readiness && npm run verify:fixtures && npm run build",
     "issues": "node scripts/create-issues.mjs",
     "issues:drips": "node scripts/create-issues.mjs --target drips",
