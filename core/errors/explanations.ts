@@ -28,6 +28,8 @@ export type RejectionCategory =
   | "policy"
   | "permission"
   | "stale_state"
+  | "concurrency"
+  | "operational"
   | "unexpected";
 
 export interface RejectionReason {
@@ -234,6 +236,58 @@ export const REJECTION_REASONS = {
     status: 410
   },
 
+  // ── Concurrency ───────────────────────────────────────────────────────────
+  duplicate_submission: {
+    category: "concurrency",
+    title: "Already processed",
+    message: "This submission was already processed.",
+    recovery: ["Use the result from the original submission.", "Do not submit again."],
+    retryable: false,
+    status: 409
+  },
+  stale_version: {
+    category: "concurrency",
+    title: "Resource updated",
+    message: "The resource has been updated since this operation was initiated.",
+    recovery: ["Refresh the resource to get the latest version.", "Try the operation again."],
+    retryable: true,
+    status: 409
+  },
+
+  // ── Operational ───────────────────────────────────────────────────────────
+  dead_letter_queue_full: {
+    category: "operational",
+    title: "System overloaded",
+    message: "The system is unable to process jobs at the moment.",
+    recovery: ["Try again in a moment.", "The system will recover automatically."],
+    retryable: true,
+    status: 503
+  },
+  job_scheduling_error: {
+    category: "operational",
+    title: "Job scheduling failed",
+    message: "Failed to schedule the background job.",
+    recovery: ["Try again later.", "Contact support if this persists."],
+    retryable: true,
+    status: 503
+  },
+  metadata_retention_expired: {
+    category: "stale_state",
+    title: "Metadata expired",
+    message: "The operational metadata for this request has expired.",
+    recovery: ["Submit a new request.", "The system can no longer recover this operation."],
+    retryable: false,
+    status: 410
+  },
+  operation_recovery_failed: {
+    category: "operational",
+    title: "Recovery failed",
+    message: "Failed to recover the operation.",
+    recovery: ["Contact support with the operation ID.", "Manual investigation may be required."],
+    retryable: false,
+    status: 500
+  },
+
   // ── Unexpected ────────────────────────────────────────────────────────────
   network_unavailable: {
     category: "unexpected",
@@ -296,6 +350,12 @@ export const REJECTION_SOURCE_CODES: Readonly<Record<string, RejectionReasonCode
   ALREADY_TRANSFERRED: "already_transferred",
   EVENT_CANCELLED: "event_cancelled",
   RATE_LIMITED: "rate_limited",
+  DUPLICATE_SUBMISSION: "duplicate_submission",
+  STALE_VERSION: "stale_version",
+  DEAD_LETTER_QUEUE_FULL: "dead_letter_queue_full",
+  JOB_SCHEDULING_ERROR: "job_scheduling_error",
+  METADATA_RETENTION_EXPIRED: "metadata_retention_expired",
+  OPERATION_RECOVERY_FAILED: "operation_recovery_failed",
   INTERNAL_ERROR: "unexpected_failure",
   NETWORK_ERROR: "network_unavailable",
   TIMEOUT: "timed_out",
