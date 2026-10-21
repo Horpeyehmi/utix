@@ -77,7 +77,7 @@ features/<slug>/
 │   └── handlers.ts                 request mocks (required if it makes requests)
 ├── e2e/
 │   └── <slug>.spec.ts              end-to-end specification
-└── README.md                       what it does, how, and why
+└── README.md                       what it does, how, why, and its threat boundary
 ```
 
 **Minimum 20 files.** A complete slice lands at 23-25 without padding.
@@ -253,6 +253,64 @@ consumers, schema constant, and old-schema regression test in one pull request;
 then run `npm run registry`. Treat each increment as a small registry-format
 changelog in the pull request description.
 
+### 15. Every slice documents its read-only threat boundary
+
+Read-only is the project's central promise, and it has to be checkable in every
+independently contributed slice rather than taken on trust. Each slice's
+`README.md` ends with a `## Threat boundary` section that answers three
+questions, each as a bold label followed by the answer on the same line:
+
+```md
+## Threat boundary
+
+- **Data sources:** every input the tool reads — form fields, pasted XDR or
+  URIs, files, Horizon or RPC responses, browser storage.
+- **Outbound requests:** the method, host and path of each request, or
+  "None — runs entirely in the browser", and what user data the URL carries.
+- **Cannot sign or submit:** the proof — which input rejects a secret key and
+  the test that shows it, and that the slice calls no signing or submission
+  API.
+```
+
+[`features/trustline-checker/README.md`](../features/trustline-checker/README.md)
+is the reference example.
+
+#### Reviewer checklist
+
+When reviewing a slice, check the section against the code, not just its
+presence:
+
+- [ ] **Data sources** matches what `schema.ts` and `lib/` actually read.
+- [ ] **Outbound requests** lists every `fetch`, `horizonServer(...)` and RPC
+      call in `lib/`, each against a public, read-only endpoint, and
+      `msw/handlers.ts` mocks exactly those requests.
+- [ ] No request URL or body carries anything a user would consider private.
+- [ ] **Cannot sign or submit** names the validation that rejects `S…` secret
+      keys (or explains why the tool takes no address at all) and the test that
+      proves it.
+- [ ] The slice adds no wallet integration that requests a signature.
+
+#### What `verify:features` enforces
+
+- **Documentation presence.** A README without the section, or with an empty or
+  `TODO` answer for any field, fails. `npm run new:feature` scaffolds the
+  section with `TODO` placeholders, so a new slice fails until it is filled in.
+  Slices that predate this rule are listed in
+  `scripts/threat-boundary-migration.json` and produce a warning instead. Like
+  the rule 11 ledger, **it must only shrink, and new slices are never added to
+  it.**
+- **No signing code.** Runtime sources (everything except `__tests__/`,
+  `fixtures/`, `e2e/` and `msw/`) must not call `Keypair.fromSecret`,
+  `Keypair.random`, `Keypair.fromRawEd25519Seed`, `.sign(…)`,
+  `signTransaction`/`signAuthEntry`/`signMessage`/`signBlob`,
+  `submitTransaction`, or the RPC `sendTransaction` method. This rule has no
+  ledger: it applies to every slice today. Fixtures may still sign sample
+  envelopes from fixed seeds.
+
+Both checks are tested in `core/__tests__/threatBoundaryDocs.test.ts`. The scan
+is a tripwire, not a proof of absence: a reviewer still reads the section
+against the code.
+
 ## What "done" means
 
 ```bash
@@ -268,6 +326,7 @@ All four must pass, plus:
 - [ ] `README.md` explains the non-obvious decision in the slice, not just what
       the tool does
 - [ ] No secret key is ever accepted or echoed
+- [ ] `README.md` has a complete `## Threat boundary` section (rule 15)
 - [ ] Nothing outside `features/<slug>/` was modified
 
 That last line is the important one. If your pull request touches a shared
@@ -285,8 +344,9 @@ in [adr/](./adr/README.md) — in particular
 [0003](./adr/0003-result-values-and-error-codes.md) (error codes),
 [0004](./adr/0004-slice-local-fixtures-and-network-boundary-mocks.md)
 (fixtures and MSW), [0005](./adr/0005-runtime-contract-migration-ledger.md)
-(runtime states) and [0006](./adr/0006-shared-amount-and-date-formatting.md)
-(amounts and dates).
+(runtime states), [0006](./adr/0006-shared-amount-and-date-formatting.md)
+(amounts and dates) and [0007](./adr/0007-documented-read-only-threat-boundaries.md)
+(threat boundaries).
 
 A pull request that changes this document — a rule, the layout, or what
 `verify:features` enforces — must add a new ADR or supersede an existing one in

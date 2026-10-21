@@ -76,6 +76,30 @@ const CONTRACT_STATE_MATCHERS = {
 };
 
 const MIGRATION_LEDGER = path.join(root, "scripts", "feature-contract-migration.json");
+const THREAT_BOUNDARY_LEDGER = path.join(root, "scripts", "threat-boundary-migration.json");
+
+/**
+ * The read-only threat boundary every slice documents in its README (see
+ * docs/FEATURE_CONTRACT.md rule 15). Each field is a bold label followed, on
+ * the same line, by a real answer — a `TODO` placeholder does not count.
+ */
+export const THREAT_BOUNDARY_HEADING = "## Threat boundary";
+export const THREAT_BOUNDARY_FIELDS = ["Data sources", "Outbound requests", "Cannot sign or submit"];
+
+/**
+ * Calls that would let a slice sign or submit a transaction. Runtime sources
+ * must never contain them; fixtures and tests may, because they build signed
+ * sample envelopes from fixed seeds.
+ */
+export const SIGNING_PATTERNS = [
+  { id: "secret_keypair", pattern: /\bKeypair\.(?:fromSecret|fromRawEd25519Seed|random)\s*\(/ },
+  { id: "sign_call", pattern: /(?<!Math)\.sign(?:Decorated|PayloadDecorated)?\s*\(/ },
+  { id: "wallet_sign", pattern: /\bsign(?:Transaction|AuthEntry|Message|Blob)\s*\(/ },
+  { id: "horizon_submit", pattern: /\bsubmit(?:Async)?Transaction\s*\(/ },
+  { id: "rpc_send", pattern: /\bsendTransaction\b/ }
+];
+
+const NON_RUNTIME_DIRS = ["__tests__/", "fixtures/", "e2e/", "msw/"];
 
 /**
  * Slices whose tests still assert the states by hand instead of through the
@@ -228,6 +252,58 @@ function contractFailure(result) {
   );
 }
 
+/**
+ * Pure threat-boundary evaluation: given a slice's README, decide whether it
+ * documents every field of the read-only threat boundary.
+ */
+export function evaluateThreatBoundaryDoc(slug, readme) {
+  const lines = (readme ?? "").split(/\r?\n/);
+  const start = lines.findIndex((line) => line.trim() === THREAT_BOUNDARY_HEADING);
+  if (start === -1) return { slug, ok: false, hasSection: false, missing: [...THREAT_BOUNDARY_FIELDS] };
+
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((line) => /^#{1,2}\s/.test(line));
+  const section = (end === -1 ? rest : rest.slice(0, end)).join("\n");
+
+  const missing = THREAT_BOUNDARY_FIELDS.filter((field) => {
+    const label = field.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const answer = section.match(new RegExp(`^\\s*(?:[-*]\\s+)?\\*\\*${label}:\\*\\*[ \\t]*(.*)$`, "m"))?.[1];
+    return !answer || answer.trim().length === 0 || /\bTODO\b/.test(answer);
+  });
+
+  return { slug, ok: missing.length === 0, hasSection: true, missing };
+}
+
+/** Removes comments so prose such as "never calls sendTransaction" is not a match. */
+function stripComments(source) {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`\\])\/\/.*$/gm, "$1");
+}
+
+/**
+ * Pure signing scan: given a slice's runtime sources (path → text), list every
+ * call that could sign or submit a transaction.
+ */
+export function findSigningCalls(sources) {
+  const hits = [];
+  for (const [file, source] of Object.entries(sources)) {
+    if (NON_RUNTIME_DIRS.some((dir) => file.startsWith(dir))) continue;
+    const code = stripComments(source);
+    for (const { id, pattern } of SIGNING_PATTERNS) {
+      if (pattern.test(code)) hits.push({ file, id });
+    }
+  }
+  return hits;
+}
+
+async function collectRuntimeSources(sliceDir, files) {
+  const sources = {};
+  for (const file of files) {
+    if (!/\.(ts|tsx)$/.test(file) || NON_RUNTIME_DIRS.some((dir) => file.startsWith(dir))) continue;
+    sources[file] = await readFile(path.join(sliceDir, file), "utf8");
+  }
+  return sources;
+}
+
 async function isNetworkBacked(slug, sliceDir) {
   const manifestPath = path.join(sliceDir, "manifest.ts");
   if (!existsSync(manifestPath)) return false;
@@ -261,13 +337,32 @@ export async function verifySlice(slug, options = {}) {
 
   if (!contract.ok && !pending) failures.push(contractFailure(contract));
 
+  // Signing is never grandfathered: a read-only tool has no reason to sign.
+  for (const hit of findSigningCalls(await collectRuntimeSources(sliceDir, files))) {
+    failures.push(`${hit.file} — read-only boundary: must not sign or submit transactions (${hit.id})`);
+  }
+
+  const readmePath = path.join(sliceDir, "README.md");
+  const threat = evaluateThreatBoundaryDoc(slug, existsSync(readmePath) ? await readFile(readmePath, "utf8") : "");
+  const threatPending = (options.threatBoundaryPending ?? loadMigrationLedger(THREAT_BOUNDARY_LEDGER)).has(slug);
+  const threatBoundaryPending = !threat.ok && threatPending;
+
+  if (!threat.ok && !threatPending) {
+    failures.push(
+      `README.md — "${THREAT_BOUNDARY_HEADING}" section missing ${threat.missing.join(", ")} ` +
+        "(see docs/FEATURE_CONTRACT.md rule 15)"
+    );
+  }
+
   return {
     slug,
     fileCount: files.length,
     failures,
     contractPending,
     contractMissing: contract.missing,
-    contractUsesHarness: contract.usesHarness
+    contractUsesHarness: contract.usesHarness,
+    threatBoundaryPending,
+    threatBoundaryMissing: threat.missing
   };
 }
 
@@ -311,11 +406,20 @@ async function main() {
           `see scripts/feature-contract-migration.json`
       );
     }
+    if (result.threatBoundaryPending && requested.length > 0) {
+      console.log(
+        `         warning: threat boundary not documented (${result.threatBoundaryMissing.join(", ")}) — ` +
+          `pending migration, see scripts/threat-boundary-migration.json`
+      );
+    }
   }
+
+  const threatPending = results.filter((result) => result.threatBoundaryPending);
 
   console.log(
     `\n${results.length} slice(s) checked, ${failed.length} failing, ` +
       `${pending.length} pending contract migration, ` +
+      `${threatPending.length} pending threat-boundary docs, ` +
       `${results.reduce((sum, r) => sum + r.fileCount, 0)} files total`
   );
 
