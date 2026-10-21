@@ -19,6 +19,7 @@ import { manifest as batchAddressValidator } from "@/features/batch-address-vali
 import { manifest as claimableBalances } from "@/features/claimable-balances/manifest";
 import { manifest as claimablePredicateBuilder } from "@/features/claimable-predicate-builder/manifest";
 import { manifest as contractEvents } from "@/features/contract-events/manifest";
+import { manifest as duplicateTransactionScanner } from "@/features/duplicate-transaction-scanner/manifest";
 import { manifest as effectsTimeline } from "@/features/effects-timeline/manifest";
 import { manifest as explorerLinks } from "@/features/explorer-links/manifest";
 import { manifest as federationResolver } from "@/features/federation-resolver/manifest";
@@ -33,8 +34,10 @@ import { manifest as liquidityPoolCalculator } from "@/features/liquidity-pool-c
 import { manifest as liquidityPoolInspector } from "@/features/liquidity-pool-inspector/manifest";
 import { manifest as manageDataCodec } from "@/features/manage-data-codec/manifest";
 import { manifest as memoInspector } from "@/features/memo-inspector/manifest";
+import { manifest as multisigAnalyzer } from "@/features/multisig-analyzer/manifest";
 import { manifest as muxedAccountCodec } from "@/features/muxed-account-codec/manifest";
 import { manifest as networkComparison } from "@/features/network-comparison/manifest";
+import { manifest as offerInspector } from "@/features/offer-inspector/manifest";
 import { manifest as operationBrowser } from "@/features/operation-browser/manifest";
 import { manifest as operationSourceMap } from "@/features/operation-source-map/manifest";
 import { manifest as orderbookViewer } from "@/features/orderbook-viewer/manifest";
@@ -58,6 +61,7 @@ import { manifest as sorobanDecoder } from "@/features/soroban-decoder/manifest"
 import { manifest as sorobanFeeEstimator } from "@/features/soroban-fee-estimator/manifest";
 import { manifest as sorobanSpecViewer } from "@/features/soroban-spec-viewer/manifest";
 import { manifest as sponsoredReserves } from "@/features/sponsored-reserves/manifest";
+import { manifest as sponsorshipPlanner } from "@/features/sponsorship-planner/manifest";
 import { manifest as strkeyInspector } from "@/features/strkey-inspector/manifest";
 import { manifest as testnetFaucet } from "@/features/testnet-faucet/manifest";
 import { manifest as tomlValidator } from "@/features/toml-validator/manifest";
@@ -89,6 +93,7 @@ export const generatedFeatures: FeatureEntry[] = [
   { manifest: claimableBalances, load: async () => { const mod = await import("@/features/claimable-balances/panel"); return mod.default as ComponentType; } },
   { manifest: claimablePredicateBuilder, load: async () => { const mod = await import("@/features/claimable-predicate-builder/panel"); return mod.default as ComponentType; } },
   { manifest: contractEvents, load: async () => { const mod = await import("@/features/contract-events/panel"); return mod.default as ComponentType; } },
+  { manifest: duplicateTransactionScanner, load: async () => { const mod = await import("@/features/duplicate-transaction-scanner/panel"); return mod.default as ComponentType; } },
   { manifest: effectsTimeline, load: async () => { const mod = await import("@/features/effects-timeline/panel"); return mod.default as ComponentType; } },
   { manifest: explorerLinks, load: async () => { const mod = await import("@/features/explorer-links/panel"); return mod.default as ComponentType; } },
   { manifest: federationResolver, load: async () => { const mod = await import("@/features/federation-resolver/panel"); return mod.default as ComponentType; } },
@@ -103,8 +108,10 @@ export const generatedFeatures: FeatureEntry[] = [
   { manifest: liquidityPoolInspector, load: async () => { const mod = await import("@/features/liquidity-pool-inspector/panel"); return mod.default as ComponentType; } },
   { manifest: manageDataCodec, load: async () => { const mod = await import("@/features/manage-data-codec/panel"); return mod.default as ComponentType; } },
   { manifest: memoInspector, load: async () => { const mod = await import("@/features/memo-inspector/panel"); return mod.default as ComponentType; } },
+  { manifest: multisigAnalyzer, load: async () => { const mod = await import("@/features/multisig-analyzer/panel"); return mod.default as ComponentType; } },
   { manifest: muxedAccountCodec, load: async () => { const mod = await import("@/features/muxed-account-codec/panel"); return mod.default as ComponentType; } },
   { manifest: networkComparison, load: async () => { const mod = await import("@/features/network-comparison/panel"); return mod.default as ComponentType; } },
+  { manifest: offerInspector, load: async () => { const mod = await import("@/features/offer-inspector/panel"); return mod.default as ComponentType; } },
   { manifest: operationBrowser, load: async () => { const mod = await import("@/features/operation-browser/panel"); return mod.default as ComponentType; } },
   { manifest: operationSourceMap, load: async () => { const mod = await import("@/features/operation-source-map/panel"); return mod.default as ComponentType; } },
   { manifest: orderbookViewer, load: async () => { const mod = await import("@/features/orderbook-viewer/panel"); return mod.default as ComponentType; } },
@@ -128,6 +135,7 @@ export const generatedFeatures: FeatureEntry[] = [
   { manifest: sorobanFeeEstimator, load: async () => { const mod = await import("@/features/soroban-fee-estimator/panel"); return mod.default as ComponentType; } },
   { manifest: sorobanSpecViewer, load: async () => { const mod = await import("@/features/soroban-spec-viewer/panel"); return mod.default as ComponentType; } },
   { manifest: sponsoredReserves, load: async () => { const mod = await import("@/features/sponsored-reserves/panel"); return mod.default as ComponentType; } },
+  { manifest: sponsorshipPlanner, load: async () => { const mod = await import("@/features/sponsorship-planner/panel"); return mod.default as ComponentType; } },
   { manifest: strkeyInspector, load: async () => { const mod = await import("@/features/strkey-inspector/panel"); return mod.default as ComponentType; } },
   { manifest: testnetFaucet, load: async () => { const mod = await import("@/features/testnet-faucet/panel"); return mod.default as ComponentType; } },
   { manifest: tomlValidator, load: async () => { const mod = await import("@/features/toml-validator/panel"); return mod.default as ComponentType; } },

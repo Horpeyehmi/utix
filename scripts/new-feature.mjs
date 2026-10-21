@@ -463,6 +463,14 @@ shape of the result.
 ## Safety
 
 TODO: state explicitly that this tool never asks for a secret key.
+
+## Threat boundary
+
+<!-- Required by docs/FEATURE_CONTRACT.md rule 15; verify:features fails while a TODO remains. -->
+
+- **Data sources:** TODO: every input the tool reads — form fields, URLs, files, Horizon or RPC responses, browser storage.
+- **Outbound requests:** TODO: method, host and path of each request (or "None — runs entirely in the browser"), and what user data the URL carries.
+- **Cannot sign or submit:** TODO: why this tool cannot sign or submit — which input rejects secret keys, which test proves it, and that no signing API is called.
 `
 };
 

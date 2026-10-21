@@ -55,7 +55,9 @@ const boundaries = [
   { file: "core/authorizations/store.ts", emitter: "authorization.granted" },
   { file: "core/authorizations/store.ts", emitter: "authorization.renewed" },
   { file: "core/authorizations/store.ts", emitter: "authorization.revoked" },
-  { file: "core/authorizations/store.ts", emitter: "authorization.cleaned_up" }
+  { file: "core/authorizations/store.ts", emitter: "authorization.cleaned_up" },
+  { file: "core/status/service-mode.ts", emitter: "service_mode.changed" },
+  { file: "core/status/service-mode.ts", emitter: "service_mode.expired" }
 ];
 
 const sources = new Map();

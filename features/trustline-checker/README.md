@@ -28,3 +28,18 @@ issuing account never holds a trustline to its own asset.
 
 Trustlines are public ledger data. This tool is read-only and never creates,
 modifies or removes a trustline.
+
+## Threat boundary
+
+- **Data sources:** three form fields (account id, asset code, issuer id) and
+  the public account record Horizon returns for the selected network. Nothing
+  is read from or written to browser storage.
+- **Outbound requests:** one `GET {horizon}/accounts/{accountId}` per check,
+  through `horizonServer(network).loadAccount` in `lib/trustlineChecker.ts`,
+  to `horizon-testnet.stellar.org` or `horizon.stellar.org`. The URL carries
+  only the public account id; the asset code and issuer are matched locally.
+- **Cannot sign or submit:** `parseTrustlineInput` accepts only `G…` public
+  keys, so a pasted `S…` secret is rejected as `invalid_account` before any
+  request (`__tests__/schema.test.ts`). The slice never calls a signing or
+  submission API, which `npm run verify:features` enforces by scanning its
+  runtime sources, and `loadAccount` is a read-only Horizon endpoint.

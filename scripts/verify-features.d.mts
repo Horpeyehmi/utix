@@ -19,6 +19,20 @@ export interface VerifiedSlice {
   contractPending: boolean;
   contractMissing: string[];
   contractUsesHarness: boolean;
+  threatBoundaryPending: boolean;
+  threatBoundaryMissing: string[];
+}
+
+export interface ThreatBoundaryResult {
+  slug: string;
+  ok: boolean;
+  hasSection: boolean;
+  missing: string[];
+}
+
+export interface SigningCall {
+  file: string;
+  id: string;
 }
 
 export interface VerifySliceOptions {
@@ -26,10 +40,15 @@ export interface VerifySliceOptions {
   featuresDir?: string;
   /** Slices exempt from the runtime contract rule (migration ledger). */
   contractPending?: Set<string>;
+  /** Slices exempt from the threat-boundary documentation rule (migration ledger). */
+  threatBoundaryPending?: Set<string>;
 }
 
 export const MINIMUM_FILES: number;
 export const CONTRACT_STATES: readonly string[];
+export const THREAT_BOUNDARY_HEADING: string;
+export const THREAT_BOUNDARY_FIELDS: readonly string[];
+export const SIGNING_PATTERNS: readonly { id: string; pattern: RegExp }[];
 
 export function loadMigrationLedger(ledgerPath?: string): Set<string>;
 export function collectTestSources(sliceDir: string): Promise<Record<string, string>>;
@@ -42,3 +61,5 @@ export function checkContractCoverage(
   sliceDir: string
 ): Promise<ContractCoverageResult>;
 export function verifySlice(slug: string, options?: VerifySliceOptions): Promise<VerifiedSlice>;
+export function evaluateThreatBoundaryDoc(slug: string, readme: string | undefined): ThreatBoundaryResult;
+export function findSigningCalls(sources: Record<string, string>): SigningCall[];

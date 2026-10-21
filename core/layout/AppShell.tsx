@@ -2,8 +2,12 @@ import { AppHeader } from "@/core/layout/AppHeader";
 import { Sidebar } from "@/core/layout/Sidebar";
 import { NotificationProvider } from "@/core/notifications/NotificationProvider";
 import { NetworkProvider } from "@/core/network/NetworkProvider";
+import { currentServiceNotice } from "@/core/status/service-config";
+import { ServiceStatusBanner } from "@/core/status/ServiceStatusBanner";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const notice = currentServiceNotice();
+
   return (
     <NotificationProvider>
       <NetworkProvider>
@@ -15,6 +19,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </a>
         <div className="min-h-screen bg-[linear-gradient(180deg,rgba(255,255,255,0.58),transparent_22rem)]">
           <AppHeader />
+          <ServiceStatusBanner notice={notice} />
           <div className="mx-auto flex max-w-7xl border-x border-white/70 bg-white/32 shadow-[0_24px_90px_rgba(80,95,130,0.16)] backdrop-blur-sm">
             <Sidebar />
             <main id="main-content" className="min-w-0 flex-1 px-4 py-8 sm:px-6 lg:px-8">

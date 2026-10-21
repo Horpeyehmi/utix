@@ -35,3 +35,4 @@ old one's status to `Superseded by NNNN`, and update both rows.
 | [0004](./0004-slice-local-fixtures-and-network-boundary-mocks.md) | Fixtures live in the slice; requests are mocked with MSW | Accepted |
 | [0005](./0005-runtime-contract-migration-ledger.md) | Runtime contract states are enforced with a shrinking ledger | Accepted |
 | [0006](./0006-shared-amount-and-date-formatting.md) | Amounts and dates go through `core/format` | Accepted |
+| [0007](./0007-documented-read-only-threat-boundaries.md) | Each slice documents its read-only threat boundary; signing code is scanned for | Proposed |

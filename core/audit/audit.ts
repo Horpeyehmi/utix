@@ -99,7 +99,11 @@ export const SENSITIVE_ACTIONS = [
   /** A freeze window was bypassed for an emergency action. */
   "freeze.bypassed",
   /** An emergency bypass of a freeze window was refused. */
-  "freeze.bypass_denied"
+  "freeze.bypass_denied",
+  /** The public service mode (degraded, paused, maintenance) was changed or a change was refused. */
+  "service_mode.changed",
+  /** A service mode reached its `until` and returned to normal on its own. */
+  "service_mode.expired"
 ] as const;
 
 export type AuditAction = (typeof SENSITIVE_ACTIONS)[number];
