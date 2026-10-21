@@ -21,7 +21,21 @@ NEXT_PUBLIC_HORIZON_MAINNET_URL=https://horizon.stellar.org
 NEXT_PUBLIC_APP_URL=https://your-vercel-domain.vercel.app
 ```
 
-Use `NEXT_PUBLIC_STELLAR_NETWORK=testnet` for public demos. The in-app network switch can still query mainnet Horizon-backed tools.
+Use `NEXT_PUBLIC_STELLAR_NETWORK=testnet` for public demos.
+
+### Service status (optional)
+
+```env
+UTIX_SERVICE_MODE=normal          # degraded | paused | maintenance
+UTIX_SERVICE_MESSAGE=             # public text, at most 280 characters
+UTIX_SERVICE_SINCE=               # ISO-8601, optional
+UTIX_SERVICE_UNTIL=               # ISO-8601, optional; the mode lifts itself after it
+```
+
+These show a site-wide banner, pause every tool (`paused`), and drive
+`GET /api/status`. Leave them unset in normal operation. See the runbook in
+[PUBLIC_STATUS.md](./PUBLIC_STATUS.md#runbook-entering-leaving-and-rolling-back)
+before using them in production. The in-app network switch can still query mainnet Horizon-backed tools.
 
 ## Pre-Deploy Checks
 

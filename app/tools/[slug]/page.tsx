@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { findFeature, loadFeaturePanel } from "@/core/registry/registry";
 import { featureSlugs, findManifest } from "@/core/registry/manifests";
 import { FeatureShell } from "@/core/ui/FeatureShell";
+import { currentServiceNotice } from "@/core/status/service-config";
+import { PausedToolNotice } from "@/core/status/ServiceStatusBanner";
 
 interface RouteParams {
   params: Promise<{ slug: string }>;
@@ -41,6 +43,17 @@ export default async function ToolPage({ params }: RouteParams) {
   if (!feature) notFound();
 
   const { manifest } = feature;
+
+  // A pause is a kill switch: the panel is never mounted, so no tool can make
+  // a request until the operator lifts it.
+  if (currentServiceNotice().mode === "paused") {
+    return (
+      <FeatureShell manifest={manifest}>
+        <PausedToolNotice />
+      </FeatureShell>
+    );
+  }
+
   const loaded = await loadFeaturePanel(feature);
 
   if (!loaded.ok) {

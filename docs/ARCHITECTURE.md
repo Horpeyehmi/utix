@@ -6,7 +6,7 @@ stable **core** and any number of independent **feature slices**.
 ```
 core/        shared kernel — changes rarely, reviewed carefully
 features/    one directory per tool — added freely, never collides
-app/         three files: layout, dashboard, and one dynamic tool route
+app/         layout, dashboard, one dynamic tool route, and GET /api/status
 scripts/     registry generation, scaffolding, contract verification
 ```
 
@@ -24,6 +24,7 @@ scripts/     registry generation, scaffolding, contract verification
 | `core/audit` | Append-only audit trail for sensitive user and maintainer actions |
 | `core/export` | Privacy-safe, scoped, schema-versioned data exports |
 | `core/contract` | API contract schemas and drift detection |
+| `core/status` | Public status feed and the operator service mode (degraded, paused, maintenance) behind `/api/status` and the site banner |
 | `core/network` | Network selection, URLs, passphrases, `NetworkProvider` |
 | `core/horizon` | Memoised Horizon client and the shared error taxonomy |
 | `core/rpc` | Minimal Soroban JSON-RPC caller |

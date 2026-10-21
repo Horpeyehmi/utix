@@ -77,6 +77,15 @@ function worst(statuses: readonly OverallStatus[]): OverallStatus {
   return OVERALL_STATUSES[rank];
 }
 
+/**
+ * The worse of two component statuses, by the same ranking the overall status
+ * uses. Raising a component to `floor` never hides an outage it already has.
+ */
+export function worseComponentStatus(current: ComponentStatus, floor: ComponentStatus): ComponentStatus {
+  const rank = (status: ComponentStatus) => OVERALL_STATUSES.indexOf(COMPONENT_RANK[status]);
+  return rank(floor) > rank(current) ? floor : current;
+}
+
 /** The state of a maintenance window at `nowMs`, from the clock alone. */
 export function maintenanceStateAt(window: Pick<TrustedMaintenance, "startsAt" | "endsAt">, nowMs: number): MaintenanceState {
   if (nowMs < Date.parse(window.startsAt)) return "scheduled";
