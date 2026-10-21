@@ -143,6 +143,52 @@ export const ERROR_CODES = {
     retryable: true,
   },
 
+  // ── Concurrency (409) ────────────────────────────────────────────────────
+  DUPLICATE_SUBMISSION: {
+    code: 'DUPLICATE_SUBMISSION',
+    message: 'This submission was already processed',
+    remediation: 'Use the idempotency key from your original request to retrieve the result.',
+    status: 409,
+    retryable: false,
+  },
+  STALE_VERSION: {
+    code: 'STALE_VERSION',
+    message: 'The resource has been updated since this operation was initiated',
+    remediation: 'Refresh your data and try again. Ensure you are using the latest version.',
+    status: 409,
+    retryable: false,
+  },
+
+  // ── Operational (503) ────────────────────────────────────────────────────
+  DEAD_LETTER_QUEUE_FULL: {
+    code: 'DEAD_LETTER_QUEUE_FULL',
+    message: 'The system is unable to process this job at the moment',
+    remediation: 'Retry after some time. The system will process pending jobs before accepting new ones.',
+    status: 503,
+    retryable: true,
+  },
+  JOB_SCHEDULING_ERROR: {
+    code: 'JOB_SCHEDULING_ERROR',
+    message: 'Failed to schedule the background job',
+    remediation: 'Try again later. Contact support if this persists.',
+    status: 503,
+    retryable: true,
+  },
+  METADATA_RETENTION_EXPIRED: {
+    code: 'METADATA_RETENTION_EXPIRED',
+    message: 'The operational metadata for this request has expired',
+    remediation: 'The request is no longer recoverable. Submit a new request.',
+    status: 410,
+    retryable: false,
+  },
+  OPERATION_RECOVERY_FAILED: {
+    code: 'OPERATION_RECOVERY_FAILED',
+    message: 'Failed to recover the operation',
+    remediation: 'Contact support with the operation ID to manually investigate.',
+    status: 500,
+    retryable: false,
+  },
+
   // ── Server Errors (500+) ──────────────────────────────────────────────────
   INTERNAL_ERROR: {
     code: 'INTERNAL_ERROR',
