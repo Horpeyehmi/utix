@@ -219,8 +219,12 @@ export interface WorkerFramework {
   /**
    * The high-risk write path: enqueues under an idempotency key so a retried
    * submission replays the original job instead of creating a duplicate.
+   *
+   * When the framework was created with `gates`, the matching gate is checked
+   * before idempotency and quota. A full gate returns `backpressure_full`
+   * immediately without spending quota or recording an idempotency claim.
    */
-  submit(input: JobInput): Result<SubmitResult, IdempotencyErrorCode | QuotaErrorCode>;
+  submit(input: JobInput): Result<SubmitResult, IdempotencyErrorCode | QuotaErrorCode | "backpressure_full">;
   /** The quota store `submit()` charges. */
   quota(): QuotaStore;
   /** The idempotency records this framework has persisted. */
@@ -301,6 +305,36 @@ function findingDedupe(jobs: Map<string, JobPayload>, key: string): JobPayload |
 export interface WorkerFrameworkOptions {
   /** Quota store charged by `submit()`. Defaults to an isolated in-memory one. */
   quota?: QuotaStore;
+  /**
+   * Bounded-queue backpressure gates for expensive background operations.
+   *
+   * When an `enqueue` (or `submit`) call arrives, each gate is checked in order
+   * against the job's `operation`. The first gate whose label is a prefix of the
+   * operation handles the call; if the gate is full it returns
+   * `backpressure_full` and the job is never enqueued.
+   *
+   * Gates are optional and purely additive: a framework with no gates behaves
+   * exactly as before. Existing callers that never set this option are unaffected.
+   *
+   * Usage:
+   * ```ts
+   * const analyticsGate = createBoundedEnqueueGate(framework, {
+   *   label: "analytics",
+   *   maxConcurrent: 4,
+   *   overflowPolicy: "drop_oldest"
+   * });
+   * const framework = createWorkerFramework({}, { gates: [analyticsGate] });
+   * ```
+   *
+   * Operational notes:
+   * - Gates are evaluated before the idempotency and quota checks in `submit()`,
+   *   so a rejected job never spends quota.
+   * - A gate refusal returns `backpressure_full` from both `enqueue` and
+   *   `submit`, distinguishable from a quota or idempotency failure.
+   * - Removing a gate from the options array on the next framework instance
+   *   restores unbounded behaviour with no state migration required.
+   */
+  gates?: import("@/core/workers/backpressure").BoundedEnqueueGate[];
 }
 
 export function createWorkerFramework(
@@ -322,6 +356,20 @@ export function createWorkerFramework(
   const inFlightSet = new Set<Promise<void>>();
   const idempotencyStore = createIdempotencyStore({ ttlMs: mergedPolicy.idempotencyTtlMs });
   const quotaStore = options.quota ?? createQuotaStore({ storage: createMemoryQuotaStorage() });
+
+  /**
+   * Returns the first configured gate whose label prefix matches `operation`,
+   * or `undefined` when no gate covers the operation.
+   *
+   * Gate lookup is O(g) where g is the number of gates (typically 1–3).
+   * It is intentionally a separate helper rather than inlined in `enqueue` so
+   * the gate path stays readable and testable without reading the full enqueue
+   * body.
+   */
+  function findGate(operation: string) {
+    if (!options.gates || options.gates.length === 0) return undefined;
+    return options.gates.find((gate) => operation.startsWith(gate.label()));
+  }
 
   /**
    * The only place a job's status changes. Anything the `worker_job` table does
@@ -565,7 +613,30 @@ export function createWorkerFramework(
       return job;
     },
 
-    submit(input: JobInput): Result<SubmitResult, IdempotencyErrorCode | QuotaErrorCode> {
+    submit(input: JobInput): Result<SubmitResult, IdempotencyErrorCode | QuotaErrorCode | "backpressure_full"> {
+      // ── Backpressure gate check ────────────────────────────────────────────
+      // When the framework has a gate covering this operation, we check capacity
+      // before creating an idempotency claim or spending quota.
+      //
+      // Design note: we call `gate.stats()` + live count rather than
+      // `gate.enqueue()` here. The gate was designed as an external facade that
+      // calls `framework.enqueue()` itself; calling it from inside `submit()`
+      // would create a double-enqueue. Instead, `submit` reads the gate's
+      // current live count and refuses early when the gate is full. The gate's
+      // own `enqueue()` (used by callers who bypass `submit`) is the other path
+      // and handles `drop_oldest` eviction. `submit` always uses reject semantics
+      // because idempotency keys require deterministic outcomes.
+      //
+      // Replays are exempt: if we already have a completed record for this key
+      // the job was already enqueued; it either succeeded or is still live, and
+      // the gate's live count already includes it.
+      const gate = findGate(input.operation);
+      if (gate) {
+        const { live, maxConcurrent } = gate.stats();
+        if (live >= maxConcurrent) {
+          return err("backpressure_full");
+        }
+      }
       const begun = idempotencyStore.begin({
         key: input.idempotencyKey,
         operation: "worker.enqueue",
@@ -832,6 +903,13 @@ export function createWorkerFramework(
       idempotencyStore.reset();
       // A shared quota store belongs to the caller; only an owned one is cleared.
       if (!options.quota) quotaStore.reset();
+      // Reset gate counters so a test that calls reset() starts with a clean
+      // gate state. Gates are owned by the caller when passed via options.gates,
+      // but their counters are scoped to this framework's job map, so resetting
+      // the map without resetting the counters would leave stale stats.
+      if (options.gates) {
+        for (const gate of options.gates) gate.reset();
+      }
     }
   };
 

@@ -132,3 +132,48 @@ When the domain model changes:
 - Add new checks for new invariants
 - Update test fixtures and expectations
 - Document any new failure modes
+
+## Snapshot restore verification
+
+Before applying any snapshot — whether from a migration, a rollback or a
+re-hydration — run it through `verifyAndRestore` or `preflight` from
+`core/archive/snapshot.ts`. The pipeline checks:
+
+1. Schema version compatibility (blocks downgrade/upgrade unless explicitly allowed).
+2. Ledger sequence regression (blocks restores that would roll back Stellar state).
+3. Content hash integrity (blocks tampered or partially-written snapshots).
+4. Per-record invariants you declare for your domain type.
+
+A failing check throws `SnapshotMismatchError` **before** `onRestore` is called,
+so prior state is always intact on failure.
+
+**Pre-flight check:**
+
+```ts
+import { preflight } from "@/core/archive/snapshot";
+
+const check = preflight(incomingSnap, { invariants, expectedSchemaVersion: 2 });
+if (!check.ok) {
+  // check.code === "snapshot_invariant_violation"
+  // check.detail — array of SnapshotViolation, one per failing record/check
+  return reportViolations(check.detail);
+}
+// safe to call verifyAndRestore with onRestore
+```
+
+**Rollback point:**
+
+```ts
+// Capture before any restore attempt.
+const rollbackSnap = captureSnapshot(currentRecords, { schemaVersion, ledgerSequence });
+
+try {
+  verifyAndRestore(incomingSnap, { invariants, onRestore: commit });
+} catch (e) {
+  if (e instanceof SnapshotMismatchError) {
+    verifyAndRestore(rollbackSnap, { invariants, onRestore: commit }); // revert
+  }
+}
+```
+
+Full documentation: [docs/SNAPSHOT_RESTORE.md](./SNAPSHOT_RESTORE.md)
