@@ -18,8 +18,6 @@ test-results/
 playwright-report/
 
 # local env
-.env
-.env.local
 .env*.local
 
 # local agent checkouts of other repositories
@@ -37,3 +35,4 @@ inqutum/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+config.bat
