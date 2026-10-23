@@ -1,5 +1,9 @@
 import { buildStatusResponse } from "@/core/status/service-config";
 
+// Contributor diagnostics: local setup and dependency failures surface as a
+// structured status payload so the route itself never throws on bad config.
+export const runtime = "nodejs";
+
 // Read the environment and the clock per request, never at build time.
 export const dynamic = "force-dynamic";
 

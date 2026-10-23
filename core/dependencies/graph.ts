@@ -11,6 +11,21 @@
  * resource is reported once at its shortest distance. Dangling references are
  * reported rather than ignored, and restricted resources are redacted for
  * callers without `admin:config`.
+ *
+ * Operational edge cases and recovery behavior:
+ * - Unauthorized callers (no `view:dashboard`) get `permission_denied` and no
+ * graph data is returned, so nothing leaks about the topology.
+ * - A root that is restricted is denied to callers without `admin:config`,
+ * rather than returning a redacted root, to avoid revealing its existence.
+ * - Unknown roots return `resource_not_found`; callers may retry after the
+ * graph is reloaded. The function is pure and read-only, so retry is safe
+ * and no rollback is needed.
+ * - Duplicate node ids: the last occurrence wins in the lookup map. Callers
+ * should dedupe before invoking; this is a data error, not a retry case.
+ * - Self-loops and cycles through the root are reported in `cycles`, not
+ * followed again, so the walk always terminates.
+ * - Migration: the report shape is unchanged; `cycles`, `missingReferences`,
+ * and `redactedCount` were already part of the contract.
  */
 
 import type { AuthContext } from "@/core/auth/middleware";
