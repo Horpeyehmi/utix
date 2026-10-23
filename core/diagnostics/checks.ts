@@ -12,6 +12,58 @@ import type { DiagnosticCheckResult, DiagnosticsOptions } from "./types.ts";
 const SECRET_KEY_PATTERN = /\bS[A-Z2-7]{55}\b/;
 const MIN_NODE_MAJOR = 20;
 
+/**
+ * Shared retry policy for transient filesystem errors (e.g. EBUSY/EAGAIN on
+ * Windows or network mounts during `npm install`). Permanent errors such as
+ * ENOENT are never retried.
+ */
+const TRANSIENT_FS_CODES = new Set(["EBUSY", "EAGAIN", "EMFILE", "ENFILE"]);
+export const FS_RETRY_ATTEMPTS = 3;
+export const FS_RETRY_DELAY_MS = 50;
+
+function isTransientFsError(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException | undefined)?.code;
+  return typeof code === "string" && TRANSIENT_FS_CODES.has(code);
+}
+
+/** Retries an fs operation only on transient errors, with linear backoff. */
+async function withFsRetry<T>(
+  op: () => Promise<T>,
+  attempts: number = FS_RETRY_ATTEMPTS,
+  delayMs: number = FS_RETRY_DELAY_MS
+): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await op();
+    } catch (err) {
+      lastErr = err;
+      if (!isTransientFsError(err) || attempt === attempts) throw err;
+      await new Promise((resolve) => setTimeout(resolve, delayMs * attempt));
+    }
+  }
+  throw lastErr;
+}
+
+/** Exported for tests: classifies a filesystem error into an actionable hint. */
+export function describeFsError(err: unknown): { code: string; hint: string } {
+  const code = (err as NodeJS.ErrnoException | undefined)?.code ?? "UNKNOWN";
+  switch (code) {
+    case "ENOENT":
+      return { code, hint: "File or directory does not exist. Check the project root path." };
+    case "EACCES":
+    case "EPERM":
+      return { code, hint: "Permission denied. Check file ownership and run from a directory you can read." };
+    case "EBUSY":
+    case "EAGAIN":
+      return { code, hint: "Resource is busy or temporarily unavailable. Close other processes using it and retry." };
+    case "ENOTDIR":
+      return { code, hint: "A path component is not a directory. Check the project layout." };
+    default:
+      return { code, hint: "Unexpected filesystem error. Re-run with the same inputs; if it persists, inspect the path." };
+  }
+}
+
 export async function checkNodeRuntime(): Promise<DiagnosticCheckResult> {
   const version = process.version;
   const major = parseInt(version.replace(/^v/, "").split(".")[0], 10);
@@ -117,10 +169,10 @@ export async function checkDependencies(projectRoot: string): Promise<Diagnostic
   const nodeModulesPath = path.join(projectRoot, "node_modules");
 
   try {
-    const pkgRaw = await readFile(pkgPath, "utf8");
+    const pkgRaw = await withFsRetry(() => readFile(pkgPath, "utf8"));
     const pkg = JSON.parse(pkgRaw);
 
-    const hasNodeModules = await stat(nodeModulesPath)
+    const hasNodeModules = await withFsRetry(() => stat(nodeModulesPath))
       .then((s) => s.isDirectory())
       .catch(() => false);
 
@@ -163,13 +215,15 @@ export async function checkDependencies(projectRoot: string): Promise<Diagnostic
     };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
+    const { code, hint } = describeFsError(err);
     return {
       id: "dependencies-tree",
       category: "dependencies",
       name: "Dependencies & Node Modules",
       status: "fail",
-      message: `Failed to inspect package dependencies: ${errorMsg}`,
-      remediation: "Verify package.json exists and is valid JSON."
+      message: `Failed to inspect package dependencies (${code}): ${errorMsg}`,
+      details: { code },
+      remediation: `${hint} Verify package.json exists and is valid JSON.`
     };
   }
 }
@@ -179,12 +233,12 @@ export async function checkRegistrySync(projectRoot: string): Promise<Diagnostic
   const generatedManifestPath = path.join(projectRoot, "core", "registry", "manifests.generated.ts");
 
   try {
-    const featureEntries = await readdir(featuresDir, { withFileTypes: true });
+    const featureEntries = await withFsRetry(() => readdir(featuresDir, { withFileTypes: true }));
     const featureDirs = featureEntries.filter((e) => e.isDirectory()).map((e) => e.name);
 
     let manifestContent = "";
     try {
-      manifestContent = await readFile(generatedManifestPath, "utf8");
+      manifestContent = await withFsRetry(() => readFile(generatedManifestPath, "utf8"));
     } catch {
       return {
         id: "registry-sync",
@@ -224,13 +278,15 @@ export async function checkRegistrySync(projectRoot: string): Promise<Diagnostic
     };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
+    const { code, hint } = describeFsError(err);
     return {
       id: "registry-sync",
       category: "registry",
       name: "Feature Registry Synchronization",
       status: "fail",
-      message: `Failed to inspect feature registry: ${errorMsg}`,
-      remediation: "Run 'npm run registry'"
+      message: `Failed to inspect feature registry (${code}): ${errorMsg}`,
+      details: { code },
+      remediation: `${hint} Run 'npm run registry'`
     };
   }
 }
@@ -239,7 +295,7 @@ export async function checkFeatureBoundaries(projectRoot: string): Promise<Diagn
   const exceptionsPath = path.join(projectRoot, "scripts", "feature-boundary-exceptions.json");
 
   try {
-    const exceptionsRaw = await readFile(exceptionsPath, "utf8");
+    const exceptionsRaw = await withFsRetry(() => readFile(exceptionsPath, "utf8"));
     const parsed = JSON.parse(exceptionsRaw);
     const count = parsed.exceptions?.length ?? 0;
 
@@ -251,14 +307,16 @@ export async function checkFeatureBoundaries(projectRoot: string): Promise<Diagn
       message: `Boundary rules intact with ${count} documented and reviewed exception(s).`,
       details: { exceptionCount: count }
     };
-  } catch {
+  } catch (err: unknown) {
+    const { code, hint } = describeFsError(err);
     return {
       id: "feature-boundaries",
       category: "boundaries",
       name: "Feature Boundary Isolation",
       status: "warn",
-      message: "scripts/feature-boundary-exceptions.json could not be read; using default boundary rules.",
-      remediation: "Verify scripts/feature-boundary-exceptions.json exists and is valid JSON."
+      message: `scripts/feature-boundary-exceptions.json could not be read (${code}); using default boundary rules.`,
+      details: { code },
+      remediation: `${hint} Verify scripts/feature-boundary-exceptions.json exists and is valid JSON.`
     };
   }
 }
