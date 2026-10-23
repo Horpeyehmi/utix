@@ -33,11 +33,9 @@ describe("Contributor Diagnostics (#275)", () => {
     const normal = await checkEnvironmentVariables();
     expect(normal.id).toBe("environment-config");
 
-    // Temporarily inject a secret key
+    // Temporarily inject a secret key in exact 56-char secret key format
     const prevKey = process.env.TEST_SECRET_KEY;
     try {
-      process.env.TEST_SECRET_KEY = "SBWWZ2VHYJ...SDF777";
-      // Exact 56-char secret key format
       process.env.TEST_SECRET_KEY = "S" + "A".repeat(55);
       const flagged = await checkEnvironmentVariables();
       expect(flagged.status).toBe("fail");

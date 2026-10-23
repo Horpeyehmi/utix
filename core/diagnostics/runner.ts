@@ -19,6 +19,36 @@ import type {
   DiagnosticsOptions
 } from "./types.ts";
 
+const DEFAULT_MAX_ATTEMPTS = 2;
+const DEFAULT_RETRY_DELAY_MS = 150;
+
+type CheckFn = () => Promise<DiagnosticCheckResult>;
+
+/**
+ * Runs a single check with bounded retries. Retries only when the thrown
+ * error looks transient (timeouts, EAGAIN/EBUSY, EACCES is NOT retried since
+ * it is an authorization failure and must surface immediately).
+ */
+async function runWithRetry(
+  fn: CheckFn,
+  maxAttempts: number,
+  retryDelayMs: number
+): Promise<DiagnosticCheckResult> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      const code = (err as NodeJS.ErrnoException | undefined)?.code;
+      const transient = code === "EAGAIN" || code === "EBUSY" || code === "ETIMEDOUT";
+      if (!transient || attempt === maxAttempts) break;
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs * attempt));
+    }
+  }
+  throw lastError;
+}
+
 export async function runContributorDiagnostics(
   options: DiagnosticsOptions = {}
 ): Promise<ContributorDiagnosticsReport> {
@@ -28,38 +58,40 @@ export async function runContributorDiagnostics(
     : typeof options.now === "number"
       ? new Date(options.now).toISOString()
       : new Date().toISOString();
+  const maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
+  const retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
 
   // Run all diagnostic checks concurrently with isolated error boundaries
   const checks: DiagnosticCheckResult[] = await Promise.all([
-    checkNodeRuntime().catch((err) => ({
+    runWithRetry(checkNodeRuntime, maxAttempts, retryDelayMs).catch((err) => ({
       id: "node-version",
       category: "node_runtime" as const,
       name: "Node.js Engine Version",
       status: "fail" as const,
       message: `Check threw unexpected error: ${err instanceof Error ? err.message : String(err)}`
     })),
-    checkEnvironmentVariables().catch((err) => ({
+    runWithRetry(checkEnvironmentVariables, maxAttempts, retryDelayMs).catch((err) => ({
       id: "environment-config",
       category: "environment" as const,
       name: "Environment Configuration & Sanitization",
       status: "fail" as const,
       message: `Check threw unexpected error: ${err instanceof Error ? err.message : String(err)}`
     })),
-    checkDependencies(projectRoot).catch((err) => ({
+    runWithRetry(() => checkDependencies(projectRoot), maxAttempts, retryDelayMs).catch((err) => ({
       id: "dependencies-tree",
       category: "dependencies" as const,
       name: "Dependencies & Node Modules",
       status: "fail" as const,
       message: `Check threw unexpected error: ${err instanceof Error ? err.message : String(err)}`
     })),
-    checkRegistrySync(projectRoot).catch((err) => ({
+    runWithRetry(() => checkRegistrySync(projectRoot), maxAttempts, retryDelayMs).catch((err) => ({
       id: "registry-sync",
       category: "registry" as const,
       name: "Feature Registry Synchronization",
       status: "fail" as const,
       message: `Check threw unexpected error: ${err instanceof Error ? err.message : String(err)}`
     })),
-    checkFeatureBoundaries(projectRoot).catch((err) => ({
+    runWithRetry(() => checkFeatureBoundaries(projectRoot), maxAttempts, retryDelayMs).catch((err) => ({
       id: "feature-boundaries",
       category: "boundaries" as const,
       name: "Feature Boundary Isolation",
