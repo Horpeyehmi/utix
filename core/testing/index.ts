@@ -7,7 +7,17 @@ export {
   type FeatureSliceHarness
 } from "@/core/testing/contract";
 export { withMswHandlers, http, HttpResponse, delay } from "@/core/testing/msw";
-export { expectNoAxeViolations, analyze } from "@/core/testing/axe";
+export { expectNoAxeViolations, expectRulePasses, collectAccessibilityReport, analyze } from "@/core/testing/axe";
+export {
+  expectAsyncErrorAnnouncement,
+  expectKeyboardAccessibleErrorRecovery,
+  expectAsyncStateAccessible,
+  expectFormAsyncValidationA11y,
+  expectAsyncPaginationA11y,
+  expectDismissibleNotificationA11y,
+  getAsyncErrorA11yReport,
+  type AsyncErrorScenario
+} from "@/core/testing/async-a11y";
 export {
   sorobanRpcHandlers,
   sorobanRpcMethod,
